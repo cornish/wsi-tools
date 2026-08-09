@@ -36,8 +36,9 @@ func runAssociatedRemoveForIFE(typ, input, outPath string, fl removeFlags) error
 	return rebuildIFEWithPlan(input, outPath, ifeEditPlan{skip: lower})
 }
 
-// runAssociatedReplaceForIFE replaces (or adds) an associated image in an IFE
-// slide via a pure verbatim pyramid rebuild.
+// runAssociatedReplaceForIFE replaces an existing associated image — or adds it
+// when the type is not yet present — in an IFE slide via a pure verbatim pyramid
+// rebuild.
 func runAssociatedReplaceForIFE(typ, input, outPath string, fl replaceFlags) error {
 	img, err := decodeReplacementImage(fl.image)
 	if err != nil {

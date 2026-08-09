@@ -341,6 +341,7 @@ func assembleIFEMetadata(w *ife.Writer, src source.Source, plan ifeEditPlan) {
 // plan optionally drops or replaces a single type; pass ifeEditPlan{} for
 // identical behavior to the original (no-op edit).
 func addIFEAssociated(w *ife.Writer, src source.Source, plan ifeEditPlan) {
+	replaced := false
 	for _, a := range src.Associated() {
 		lower := strings.ToLower(a.Type())
 
@@ -357,6 +358,7 @@ func addIFEAssociated(w *ife.Writer, src source.Source, plan ifeEditPlan) {
 				continue
 			}
 			w.AddAssociated(lower, pw, ph, ife.ImgEncPNG, blob)
+			replaced = true
 			continue
 		}
 
@@ -399,6 +401,17 @@ func addIFEAssociated(w *ife.Writer, src source.Source, plan ifeEditPlan) {
 		// Title MUST be the lowercase type so the reader round-trips it back to the
 		// AssociatedLabel/Macro/... taxonomy.
 		w.AddAssociated(lower, uint32(size.X), uint32(size.Y), enc, blob)
+	}
+	// Add-when-absent: if the replace target was not found in the source, append it
+	// now. This matches the DICOM and SVS replace paths, which add the image even
+	// when the type is not already present.
+	if plan.replace != "" && !replaced && plan.repImg != nil {
+		blob, pw, ph, err := encodeAssocPNG(plan.repImg)
+		if err != nil {
+			slog.Warn("skipping added associated image (png encode failed)", "type", plan.replace, "err", err)
+			return
+		}
+		w.AddAssociated(plan.replace, pw, ph, ife.ImgEncPNG, blob)
 	}
 }
 

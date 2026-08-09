@@ -119,6 +119,72 @@ func TestAssocIFE_LabelReplace(t *testing.T) {
 	}
 }
 
+// TestAssocIFE_LabelReplaceAddsWhenAbsent verifies that `label replace` on an IFE
+// with NO label adds the image (add-when-absent parity with DICOM/SVS paths).
+func TestAssocIFE_LabelReplaceAddsWhenAbsent(t *testing.T) {
+	bin := buildOnce(t)
+	svs := filepath.Join(testdir(t), "svs", "CMU-1-Small-Region.svs")
+	if _, err := os.Stat(svs); err != nil {
+		t.Skipf("no svs fixture")
+	}
+	dir := t.TempDir()
+
+	// Step 1: convert SVS → IFE.
+	ifeFile := filepath.Join(dir, "s.ife")
+	if o, err := exec.Command(bin, "convert", "--to", "ife", "-f", "-o", ifeFile, svs).CombinedOutput(); err != nil {
+		t.Fatalf("convert ife: %v\n%s", err, o)
+	}
+
+	// Step 2: remove the label so we have a label-free IFE.
+	nolabel := filepath.Join(dir, "nolabel.ife")
+	if containsLabelAssoc(t, bin, ifeFile) {
+		if o, err := exec.Command(bin, "label", "remove", "-o", nolabel, ifeFile).CombinedOutput(); err != nil {
+			t.Fatalf("label remove: %v\n%s", err, o)
+		}
+	} else {
+		// Source already has no label; use as-is.
+		nolabel = ifeFile
+	}
+	if containsLabelAssoc(t, bin, nolabel) {
+		t.Skip("could not produce a label-free IFE from this fixture")
+	}
+
+	// Step 3: replace label on the label-free IFE — must ADD it.
+	png := filepath.Join(dir, "new.png")
+	writeTestPNG(t, png, 320, 240)
+	added := filepath.Join(dir, "added.ife")
+	if o, err := exec.Command(bin, "label", "replace", "--image", png, "-o", added, nolabel).CombinedOutput(); err != nil {
+		t.Fatalf("label replace add: %v\n%s", err, o)
+	}
+
+	// Label must now be present.
+	if !containsLabelAssoc(t, bin, added) {
+		t.Errorf("label not added when absent from source IFE")
+	}
+
+	// And must decode to the expected dimensions.
+	extractedPNG := filepath.Join(dir, "extracted_label.png")
+	if o, err := exec.Command(bin, "extract", "--type", "label", "--format", "png", "-o", extractedPNG, added).CombinedOutput(); err != nil {
+		t.Logf("extract label (non-fatal): %v\n%s", err, o)
+	} else {
+		data, rerr := os.ReadFile(extractedPNG)
+		if rerr != nil {
+			t.Logf("read extracted label: %v", rerr)
+		} else {
+			limg, _, derr := image.Decode(bytes.NewReader(data))
+			if derr != nil {
+				t.Logf("decode extracted label: %v", derr)
+			} else {
+				b := limg.Bounds()
+				if b.Dx() != 320 || b.Dy() != 240 {
+					t.Errorf("added label dims: got %dx%d, want 320x240", b.Dx(), b.Dy())
+				}
+				t.Logf("added label dims: %dx%d", b.Dx(), b.Dy())
+			}
+		}
+	}
+}
+
 // ifePixelHash returns the pixel hash for the IFE pyramid (non-fatal: returns ""
 // on error and lets the caller skip the comparison).
 func ifePixelHash(t *testing.T, bin, path string) string {
