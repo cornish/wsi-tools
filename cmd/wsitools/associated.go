@@ -486,7 +486,13 @@ func newAssocTypeCmd(typ string) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmd.SilenceUsage = true
 			input := args[0]
-			out, err := resolveAssocOutput(input, rmFlags.output, rmFlags.inPlace, rmFlags.overwrite)
+			var out string
+			var err error
+			if isDICOMInput(input) {
+				out, err = resolveAssocOutputDICOM(input, rmFlags.output, rmFlags.inPlace, rmFlags.overwrite)
+			} else {
+				out, err = resolveAssocOutput(input, rmFlags.output, rmFlags.inPlace, rmFlags.overwrite)
+			}
 			if err != nil {
 				return err
 			}
@@ -504,7 +510,13 @@ func newAssocTypeCmd(typ string) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmd.SilenceUsage = true
 			input := args[0]
-			out, err := resolveAssocOutput(input, rpFlags.output, rpFlags.inPlace, rpFlags.overwrite)
+			var out string
+			var err error
+			if isDICOMInput(input) {
+				out, err = resolveAssocOutputDICOM(input, rpFlags.output, rpFlags.inPlace, rpFlags.overwrite)
+			} else {
+				out, err = resolveAssocOutput(input, rpFlags.output, rpFlags.inPlace, rpFlags.overwrite)
+			}
 			if err != nil {
 				return err
 			}

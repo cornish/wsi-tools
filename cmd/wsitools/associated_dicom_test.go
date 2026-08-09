@@ -2,11 +2,28 @@ package main
 
 import (
 	"image"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/wsilabs/opentile-go/decoder"
 	"github.com/wsilabs/wsitools/internal/source"
 )
+
+func TestResolveAssocOutput_DICOMDir(t *testing.T) {
+	dir := t.TempDir()
+	series := filepath.Join(dir, "slide")
+	if err := os.MkdirAll(series, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := resolveAssocOutputDICOM(series, "", false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != filepath.Join(dir, "slide_edited") {
+		t.Errorf("got %q", got)
+	}
+}
 
 func TestRGBAssoc_ImplementsInterface(t *testing.T) {
 	img := &decoder.Image{Width: 4, Height: 3, Stride: 12, Format: decoder.PixelFormatRGB, Pix: make([]byte, 36)}
