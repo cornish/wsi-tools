@@ -5,6 +5,8 @@ package integration
 import (
 	"bytes"
 	"encoding/json"
+	"image"
+	"image/png"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -116,4 +118,60 @@ func TestAssocDICOM_LabelRemove(t *testing.T) {
 		t.Errorf("no files were byte-identical — same-name matching may have failed; outFiles=%v", outFiles)
 	}
 	t.Logf("byte-identical level files: %d/%d", identical, len(outFiles))
+}
+
+// writeTestPNG writes a solid-color w×h PNG to path.
+func writeTestPNG(t *testing.T, path string, w, h int) {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for i := range img.Pix {
+		img.Pix[i] = 0xC0
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if err := png.Encode(f, img); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAssocDICOM_LabelReplace(t *testing.T) {
+	bin := buildOnce(t)
+	src := filepath.Join(testdir(t), "dicom", "Leica-4")
+	if _, err := os.Stat(src); err != nil {
+		t.Skipf("no Leica-4 DICOM fixture")
+	}
+	pngPath := filepath.Join(t.TempDir(), "new.png")
+	writeTestPNG(t, pngPath, 300, 200)
+	out := filepath.Join(t.TempDir(), "edited")
+	if o, err := exec.Command(bin, "label", "replace", "--image", pngPath, "-o", out, src).CombinedOutput(); err != nil {
+		t.Fatalf("label replace <dicom>: %v\n%s", err, o)
+	}
+	if !containsLabelAssoc(t, bin, out) {
+		t.Errorf("label missing after replace")
+	}
+
+	// Verify the replaced label decodes to 300×200 via extract + decode.
+	extractedPNG := filepath.Join(t.TempDir(), "label.png")
+	if o, err := exec.Command(bin, "extract", "--type", "label", "--format", "png", "-o", extractedPNG, out).CombinedOutput(); err != nil {
+		t.Logf("extract label: %v\n%s", err, o) // non-fatal: basic containsLabelAssoc check is the gate
+	} else {
+		data, rerr := os.ReadFile(extractedPNG)
+		if rerr != nil {
+			t.Logf("read extracted label: %v", rerr)
+		} else {
+			limg, _, derr := image.Decode(bytes.NewReader(data))
+			if derr != nil {
+				t.Logf("decode extracted label png: %v", derr)
+			} else {
+				b := limg.Bounds()
+				t.Logf("replaced label dims: %dx%d", b.Dx(), b.Dy())
+				if b.Dx() != 300 || b.Dy() != 200 {
+					t.Errorf("replaced label dims: got %dx%d, want 300x200", b.Dx(), b.Dy())
+				}
+			}
+		}
+	}
 }

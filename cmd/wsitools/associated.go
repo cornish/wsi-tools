@@ -269,6 +269,13 @@ func runAssociatedReplaceFor(typ, input, outPath string, fl replaceFlags) error 
 		src.Close()
 		return runAssociatedReplaceForOMETIFF(typ, input, outPath, fl)
 	}
+	// DICOM is directory-shaped; replace by dropping the old associated instance
+	// and writing a new native-RGB one with the series' shared UIDs.
+	// Close our opentile handle first — runAssociatedReplaceForDICOM opens its own.
+	if src.Format() == string(opentile.FormatDICOM) {
+		src.Close()
+		return runAssociatedReplaceForDICOM(typ, input, outPath, fl)
+	}
 	defer src.Close()
 
 	// SVS replace works for any associated image that TRAILS the tiled pyramid

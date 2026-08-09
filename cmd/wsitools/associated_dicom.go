@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"image"
@@ -12,6 +13,7 @@ import (
 	opentile "github.com/wsilabs/opentile-go"
 	"github.com/wsilabs/opentile-go/decoder"
 	"github.com/wsilabs/wsitools/internal/dicomedit"
+	dicomwriter "github.com/wsilabs/wsitools/internal/dicomwriter"
 	"github.com/wsilabs/wsitools/internal/source"
 )
 
@@ -125,6 +127,65 @@ func runAssociatedRemoveForDICOM(typ, input, outDir string, fl removeFlags) erro
 		return fmt.Errorf("no %s image in DICOM series", typ)
 	}
 	return commitDICOMEdit(seriesDir, outDir, fl.inPlace, nil, map[string]bool{target: true})
+}
+
+// runAssociatedReplaceForDICOM replaces (or adds) the associated instance of the
+// given type in a DICOM series. If a matching instance already exists it is
+// dropped; a new native-RGB instance carrying the series' shared UIDs is written
+// in its place. When no existing instance matches, the new instance is simply
+// appended (add-new semantics).
+func runAssociatedReplaceForDICOM(typ, input, outDir string, fl replaceFlags) error {
+	seriesDir := input
+	if fi, err := os.Stat(input); err == nil && !fi.IsDir() {
+		seriesDir = filepath.Dir(input)
+	}
+	insts, err := dicomedit.ClassifyInstances(seriesDir)
+	if err != nil {
+		return err
+	}
+	var levelPath, oldTarget string
+	nInstances := 0
+	for _, in := range insts {
+		nInstances++
+		if in.Role == dicomedit.RoleLevel && levelPath == "" {
+			levelPath = in.Path
+		}
+		if string(in.Role) == typ {
+			oldTarget = in.Path
+		}
+	}
+	if levelPath == "" {
+		return fmt.Errorf("DICOM series has no level instance")
+	}
+	shared, err := dicomedit.ReadSharedUIDs(levelPath)
+	if err != nil {
+		return err
+	}
+	img, err := decodeReplacementImage(fl.image)
+	if err != nil {
+		return err
+	}
+	rgb := imageToRGB(img)
+
+	src, err := source.Open(seriesDir)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	skip := map[string]bool{}
+	if oldTarget != "" {
+		skip[oldTarget] = true
+	}
+	addFn := func(dstDir string) error {
+		a := &rgbAssoc{typ: typ, img: rgb}
+		var buf bytes.Buffer
+		if err := dicomwriter.WriteAssociatedInstance(&buf, src, a, shared, nInstances+1); err != nil {
+			return fmt.Errorf("build %s instance: %w", typ, err)
+		}
+		return os.WriteFile(filepath.Join(dstDir, typ+".dcm"), buf.Bytes(), 0o644)
+	}
+	return commitDICOMEdit(seriesDir, outDir, fl.inPlace, addFn, skip)
 }
 
 // commitDICOMEdit materializes the edited series: copy every .dcm from seriesDir
