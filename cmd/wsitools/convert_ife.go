@@ -174,7 +174,7 @@ func runConvertIFE(cmd *cobra.Command, input string, start time.Time) error {
 	}
 
 	// Metadata sub-blocks: ICC, associated images, free-text attributes.
-	assembleIFEMetadata(w, src)
+	assembleIFEMetadata(w, src, ifeEditPlan{})
 
 	if err := w.Finalize(); err != nil {
 		return fmt.Errorf("finalize ife: %w", err)
@@ -255,7 +255,7 @@ func runConvertIFEVerbatim(cmd *cobra.Command, src source.Source, slide *opentil
 	}
 
 	// Metadata sub-blocks: ICC, associated images, free-text attributes.
-	assembleIFEMetadata(w, src)
+	assembleIFEMetadata(w, src, ifeEditPlan{})
 
 	if err := w.Finalize(); err != nil {
 		return fmt.Errorf("finalize ife: %w", err)
@@ -293,14 +293,40 @@ func writeIFEVerbatim(w *ife.Writer, src source.Source) error {
 	return nil
 }
 
+// ifeEditPlan optionally alters the associated set during an IFE rebuild:
+// skip a type (remove) or substitute a decoded replacement (replace/rotate).
+type ifeEditPlan struct {
+	skip    string         // associated type to drop ("" = none)
+	replace string         // associated type to replace ("" = none)
+	repImg  *decoder.Image // RGB replacement for `replace`
+}
+
+// encodeAssocPNG encodes an RGB decoder.Image to a lossless PNG blob for an IFE
+// associated image.
+func encodeAssocPNG(di *decoder.Image) (blob []byte, w, h uint32, err error) {
+	enc, err := pngcodec.Factory{}.NewEncoder(
+		codec.LevelGeometry{TileWidth: di.Width, TileHeight: di.Height, PixelFormat: codec.PixelFormatRGB8},
+		codec.Quality{})
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	defer enc.Close()
+	b, err := enc.EncodeTile(tightIFERGB(di), di.Width, di.Height, nil)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	return b, uint32(di.Width), uint32(di.Height), nil
+}
+
 // assembleIFEMetadata writes the shared METADATA sub-blocks (ICC, associated
 // images, free-text attributes) into w from src. Used by both the engine and
-// verbatim pyramid paths.
-func assembleIFEMetadata(w *ife.Writer, src source.Source) {
+// verbatim pyramid paths. plan optionally removes or replaces one associated
+// image type; pass ifeEditPlan{} for a no-op.
+func assembleIFEMetadata(w *ife.Writer, src source.Source, plan ifeEditPlan) {
 	smd := src.Metadata()
 	w.SetICCProfile(smd.ICCProfile) // nil-safe; Writer skips empty
 	if !cvNoAssociated {
-		addIFEAssociated(w, src)
+		addIFEAssociated(w, src, plan)
 	}
 	w.SetAttributes(buildIFEAttributes(smd, src.Format()))
 }
@@ -312,8 +338,28 @@ func assembleIFEMetadata(w *ife.Writer, src source.Source) {
 // and skips that one image (mirroring the DICOM writer), rather than failing the
 // whole conversion. PNG associated images round-trip through opentile-go ≥ v0.49.0
 // (#74); JPEG/AVIF associated images round-trip on any version.
-func addIFEAssociated(w *ife.Writer, src source.Source) {
+// plan optionally drops or replaces a single type; pass ifeEditPlan{} for
+// identical behavior to the original (no-op edit).
+func addIFEAssociated(w *ife.Writer, src source.Source, plan ifeEditPlan) {
 	for _, a := range src.Associated() {
+		lower := strings.ToLower(a.Type())
+
+		// Edit-plan: drop this type entirely.
+		if plan.skip != "" && lower == plan.skip {
+			continue
+		}
+
+		// Edit-plan: substitute replacement image for this type.
+		if plan.replace != "" && lower == plan.replace {
+			blob, pw, ph, err := encodeAssocPNG(plan.repImg)
+			if err != nil {
+				slog.Warn("skipping associated image replacement (png encode failed)", "type", lower, "err", err)
+				continue
+			}
+			w.AddAssociated(lower, pw, ph, ife.ImgEncPNG, blob)
+			continue
+		}
+
 		size := a.Size()
 		var (
 			blob []byte
@@ -341,26 +387,18 @@ func addIFEAssociated(w *ife.Writer, src source.Source) {
 				slog.Warn("skipping associated image (decode failed)", "type", a.Type(), "err", err)
 				continue
 			}
-			pngEnc, err := pngcodec.Factory{}.NewEncoder(
-				codec.LevelGeometry{TileWidth: di.Width, TileHeight: di.Height, PixelFormat: codec.PixelFormatRGB8},
-				codec.Quality{})
-			if err != nil {
-				slog.Warn("skipping associated image (png encoder)", "type", a.Type(), "err", err)
-				continue
-			}
-			b, err := pngEnc.EncodeTile(tightIFERGB(di), di.Width, di.Height, nil)
-			pngEnc.Close()
+			b, pw, ph, err := encodeAssocPNG(di)
 			if err != nil {
 				slog.Warn("skipping associated image (png encode failed)", "type", a.Type(), "err", err)
 				continue
 			}
 			blob, enc = b, ife.ImgEncPNG
-			// Decoded dims are authoritative.
-			size.X, size.Y = di.Width, di.Height
+			// Decoded dims are authoritative (returned by encodeAssocPNG).
+			size.X, size.Y = int(pw), int(ph)
 		}
 		// Title MUST be the lowercase type so the reader round-trips it back to the
 		// AssociatedLabel/Macro/... taxonomy.
-		w.AddAssociated(strings.ToLower(a.Type()), uint32(size.X), uint32(size.Y), enc, blob)
+		w.AddAssociated(lower, uint32(size.X), uint32(size.Y), enc, blob)
 	}
 }
 
