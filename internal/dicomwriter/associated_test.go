@@ -182,6 +182,47 @@ func TestWriteAssociatedLZWLabelNative(t *testing.T) {
 	}
 }
 
+func TestWriteAssociatedInstance_Native(t *testing.T) {
+	src := openGrundium(t)
+	defer src.Close()
+	assoc := src.Associated()
+	if len(assoc) == 0 {
+		t.Skip("fixture has no associated images")
+	}
+	// Find a supported (tile-copyable) associated image.
+	var a source.AssociatedImage
+	for _, ai := range assoc {
+		if emitsAssociated(ai) {
+			a = ai
+			break
+		}
+	}
+	if a == nil {
+		t.Skip("no tile-copyable associated image in fixture")
+	}
+	shared := SharedUIDs{
+		Study:            "1.2.3.1",
+		Series:           "1.2.3.2",
+		FrameOfReference: "1.2.3.3",
+		DimensionOrg:     "1.2.3.4",
+	}
+	var buf bytes.Buffer
+	if err := WriteAssociatedInstance(&buf, src, a, shared, 99); err != nil {
+		t.Fatalf("WriteAssociatedInstance: %v", err)
+	}
+	ds, err := dicom.Parse(bytes.NewReader(buf.Bytes()), int64(buf.Len()), nil)
+	if err != nil {
+		t.Fatalf("re-parse: %v", err)
+	}
+	el, err := ds.FindElementByTag(tag.SeriesInstanceUID)
+	if err != nil {
+		t.Fatalf("SeriesInstanceUID missing: %v", err)
+	}
+	if got := el.Value.GetValue().([]string)[0]; got != shared.Series {
+		t.Errorf("SeriesInstanceUID = %q, want %q", got, shared.Series)
+	}
+}
+
 func firstStrA(t *testing.T, ds dicom.Dataset, tg tag.Tag) string {
 	t.Helper()
 	e, err := ds.FindElementByTag(tg)

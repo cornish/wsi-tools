@@ -35,10 +35,10 @@ func associatedSupported(c source.Compression) bool {
 	return c == source.CompressionJPEG || c == source.CompressionJPEG2000
 }
 
-// sharedUIDs are the UIDs shared by every instance in a pyramid Series: the
+// SharedUIDs are the UIDs shared by every instance in a pyramid Series: the
 // Study, Series, FrameOfReference, and DimensionOrganization. Each instance still
 // gets its own SOPInstanceUID.
-type sharedUIDs struct {
+type SharedUIDs struct {
 	Study, Series, FrameOfReference, DimensionOrg string
 	// Pyramid is shared by every VOLUME instance in the pyramid (the Pyramid IOD
 	// linkage); associated images do not carry it.
@@ -47,8 +47,8 @@ type sharedUIDs struct {
 
 // newSharedUIDs generates a fresh set of series-level UIDs (one per Study /
 // Series / FrameOfReference / DimensionOrganization / Pyramid).
-func newSharedUIDs() sharedUIDs {
-	return sharedUIDs{
+func newSharedUIDs() SharedUIDs {
+	return SharedUIDs{
 		Study:            NewUID(),
 		Series:           NewUID(),
 		FrameOfReference: NewUID(),
@@ -135,11 +135,21 @@ func associatedFlavor(t string) (imageType []string, specimenLabel string) {
 	}
 }
 
+// WriteAssociatedInstance emits ONE associated-image DICOM instance (label /
+// macro / thumbnail / overview) to w, using caller-supplied series-shared UIDs
+// and instance number — the surgical-edit entry point (no full-pyramid write).
+// It reuses writeAssociated, which encapsulates a tile-copyable codec verbatim or
+// stores a decoded image as native RGB, and sets the SlideLabel module for
+// label/overview.
+func WriteAssociatedInstance(w io.Writer, src source.Source, a source.AssociatedImage, shared SharedUIDs, instanceNumber int) error {
+	return writeAssociated(w, src, a, shared, instanceNumber)
+}
+
 // writeAssociated emits one associated image as a single-frame WSM instance.
 // A tile-copyable codec (JPEG / JPEG 2000) is stored verbatim-encapsulated; any
 // other codec (e.g. an LZW label — not a DICOM transfer syntax) is decoded via
 // opentile and stored as uncompressed native RGB (lossless).
-func writeAssociated(w io.Writer, src source.Source, a source.AssociatedImage, shared sharedUIDs, instanceNumber int) error {
+func writeAssociated(w io.Writer, src source.Source, a source.AssociatedImage, shared SharedUIDs, instanceNumber int) error {
 	md := src.Metadata()
 	icc := md.ICCProfile
 	if len(icc) == 0 {
@@ -240,7 +250,7 @@ func tightRGB(di *decoder.Image) []byte {
 
 // writeInstance assembles + writes one WSM VOLUME instance for src level `level`
 // (InstanceNumber level+1) to w, using the shared UIDs and a fresh SOPInstanceUID.
-func writeInstance(w io.Writer, src source.Source, level int, shared sharedUIDs, opts Options) error {
+func writeInstance(w io.Writer, src source.Source, level int, shared SharedUIDs, opts Options) error {
 	if level < 0 || level >= len(src.Levels()) {
 		return fmt.Errorf("level %d out of range (0..%d)", level, len(src.Levels())-1)
 	}

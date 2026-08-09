@@ -19,6 +19,7 @@ import (
 	xtiff "golang.org/x/image/tiff"
 
 	"github.com/wsilabs/opentile-go"
+	"github.com/wsilabs/opentile-go/decoder"
 
 	"github.com/wsilabs/wsitools/internal/source"
 	"github.com/wsilabs/wsitools/internal/tiff/edit"
@@ -52,15 +53,22 @@ type replaceFlags struct {
 	bgHex       string
 	labelDims   string
 	force       bool
+
+	// preImg is an in-memory replacement image (packed RGB). When non-nil, the
+	// replace paths use it instead of decoding --image, and its dims are the
+	// target dims (no resize to the existing image's size). This is how
+	// `<type> rotate` feeds the rotated label back through the normal, per-format
+	// lossless replace path without touching disk or the --image flag.
+	preImg *decoder.Image
 }
 
 // ---------- format gating ----------
 
 // assocFormatSupported reports whether associated-image editing is supported
-// for the given source format string. Only SVS and generic-TIFF are supported.
+// for the given source format string.
 func assocFormatSupported(format string) bool {
 	switch format {
-	case string(opentile.FormatSVS), string(opentile.FormatGenericTIFF), string(opentile.FormatCOGWSI), string(opentile.FormatOMETIFF):
+	case string(opentile.FormatSVS), string(opentile.FormatGenericTIFF), string(opentile.FormatCOGWSI), string(opentile.FormatOMETIFF), string(opentile.FormatDICOM), string(opentile.FormatIFE):
 		return true
 	default:
 		return false
@@ -71,7 +79,7 @@ func gateFormat(src source.Source) error {
 	f := src.Format()
 	if !assocFormatSupported(f) {
 		return fmt.Errorf("%w: associated editing not yet supported for %s "+
-			"(SVS, generic-TIFF, COG-WSI, and OME-TIFF only — "+
+			"(SVS, generic-TIFF, COG-WSI, OME-TIFF, DICOM, and IFE only — "+
 			"for other transforms use 'wsitools convert')", ErrUnsupportedAssoc, f)
 	}
 	return nil
@@ -185,6 +193,19 @@ func runAssociatedRemoveFor(typ, input, outPath string, fl removeFlags) error {
 		src.Close()
 		return runAssociatedRemoveForOMETIFF(typ, input, outPath, fl)
 	}
+	// DICOM is directory-shaped; edit by copying instances minus the target.
+	// Close our opentile handle first — commitDICOMEdit works at the file level.
+	if src.Format() == string(opentile.FormatDICOM) {
+		src.Close()
+		return runAssociatedRemoveForDICOM(typ, input, outPath, fl)
+	}
+	// IFE is a single-file format rebuilt verbatim (pyramid tiles copied
+	// byte-for-byte; only the associated set in the METADATA block changes).
+	// Close our handle first — rebuildIFEWithPlan opens its own.
+	if src.Format() == string(opentile.FormatIFE) {
+		src.Close()
+		return runAssociatedRemoveForIFE(typ, input, outPath, fl)
+	}
 	defer src.Close()
 
 	f, err := parseSlideFile(input)
@@ -263,6 +284,20 @@ func runAssociatedReplaceFor(typ, input, outPath string, fl replaceFlags) error 
 		src.Close()
 		return runAssociatedReplaceForOMETIFF(typ, input, outPath, fl)
 	}
+	// DICOM is directory-shaped; replace by dropping the old associated instance
+	// and writing a new native-RGB one with the series' shared UIDs.
+	// Close our opentile handle first — runAssociatedReplaceForDICOM opens its own.
+	if src.Format() == string(opentile.FormatDICOM) {
+		src.Close()
+		return runAssociatedReplaceForDICOM(typ, input, outPath, fl)
+	}
+	// IFE is a single-file format rebuilt verbatim (pyramid tiles copied
+	// byte-for-byte; only the associated set in the METADATA block changes).
+	// Close our handle first — rebuildIFEWithPlan opens its own.
+	if src.Format() == string(opentile.FormatIFE) {
+		src.Close()
+		return runAssociatedReplaceForIFE(typ, input, outPath, fl)
+	}
 	defer src.Close()
 
 	// SVS replace works for any associated image that TRAILS the tiled pyramid
@@ -282,16 +317,23 @@ func runAssociatedReplaceFor(typ, input, outPath string, fl replaceFlags) error 
 		return locErr
 	}
 
-	// Decode the replacement image.
-	img, err := decodeReplacementImage(fl.image)
-	if err != nil {
-		return err
-	}
-
-	// Determine target dims.
-	tw, th, err := resolveTargetDims(typ, img, existing, found, fl.labelDims)
-	if err != nil {
-		return err
+	// Decode the replacement image. When preImg is set (rotate), use it directly
+	// and take its dims as the target — the rotated image already has the intended
+	// (possibly W/H-swapped) size, so no resize to the existing image's dims.
+	var img image.Image
+	var tw, th int
+	if fl.preImg != nil {
+		img = decoderRGBToImage(fl.preImg)
+		tw, th = fl.preImg.Width, fl.preImg.Height
+	} else {
+		img, err = decodeReplacementImage(fl.image)
+		if err != nil {
+			return err
+		}
+		tw, th, err = resolveTargetDims(typ, img, existing, found, fl.labelDims)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Parse background.
@@ -486,7 +528,13 @@ func newAssocTypeCmd(typ string) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmd.SilenceUsage = true
 			input := args[0]
-			out, err := resolveAssocOutput(input, rmFlags.output, rmFlags.inPlace, rmFlags.overwrite)
+			var out string
+			var err error
+			if isDICOMInput(input) {
+				out, err = resolveAssocOutputDICOM(input, rmFlags.output, rmFlags.inPlace, rmFlags.overwrite)
+			} else {
+				out, err = resolveAssocOutput(input, rmFlags.output, rmFlags.inPlace, rmFlags.overwrite)
+			}
 			if err != nil {
 				return err
 			}
@@ -504,7 +552,13 @@ func newAssocTypeCmd(typ string) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmd.SilenceUsage = true
 			input := args[0]
-			out, err := resolveAssocOutput(input, rpFlags.output, rpFlags.inPlace, rpFlags.overwrite)
+			var out string
+			var err error
+			if isDICOMInput(input) {
+				out, err = resolveAssocOutputDICOM(input, rpFlags.output, rpFlags.inPlace, rpFlags.overwrite)
+			} else {
+				out, err = resolveAssocOutput(input, rpFlags.output, rpFlags.inPlace, rpFlags.overwrite)
+			}
 			if err != nil {
 				return err
 			}
@@ -521,6 +575,39 @@ func newAssocTypeCmd(typ string) *cobra.Command {
 	_ = replaceCmd.MarkFlagRequired("image")
 
 	parent.AddCommand(removeCmd, replaceCmd)
+
+	// rotate subcommand — registered only for rotatable types (label only). It
+	// reuses replaceFlags (for preImg + common output flags) but does NOT bind
+	// --image; rotate operates on the existing associated image.
+	if rotatableTypes[typ] {
+		rotFlags := &replaceFlags{}
+		rotateCmd := &cobra.Command{
+			Use:   "rotate <degrees> <slide>",
+			Short: "Rotate the " + typ + " associated image (90|180|270, clockwise)",
+			Args:  cobra.ExactArgs(2),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				cmd.SilenceUsage = true
+				deg, err := strconv.Atoi(args[0])
+				if err != nil {
+					return fmt.Errorf("degrees must be 90, 180, or 270 (got %q)", args[0])
+				}
+				input := args[1]
+				var out string
+				if isDICOMInput(input) {
+					out, err = resolveAssocOutputDICOM(input, rotFlags.output, rotFlags.inPlace, rotFlags.overwrite)
+				} else {
+					out, err = resolveAssocOutput(input, rotFlags.output, rotFlags.inPlace, rotFlags.overwrite)
+				}
+				if err != nil {
+					return err
+				}
+				return runAssociatedRotateFor(typ, deg, input, out, *rotFlags)
+			},
+		}
+		bindCommonFlags(rotateCmd, &rotFlags.assocCommonFlags)
+		parent.AddCommand(rotateCmd)
+	}
+
 	return parent
 }
 

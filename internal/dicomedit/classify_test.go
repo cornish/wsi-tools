@@ -1,0 +1,76 @@
+package dicomedit
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func testdir(t *testing.T) string {
+	t.Helper()
+	d := os.Getenv("WSI_TOOLS_TESTDIR")
+	if d == "" {
+		d = "../../sample_files"
+	}
+	return d
+}
+
+func TestClassifyInstances_Grundium(t *testing.T) {
+	dir := filepath.Join(testdir(t), "dicom", "scan_621_grundium_dicom")
+	if _, err := os.Stat(dir); err != nil {
+		t.Skipf("no DICOM fixture: %v", err)
+	}
+	got, err := ClassifyInstances(dir)
+	if err != nil {
+		t.Fatalf("ClassifyInstances: %v", err)
+	}
+	var levels, labels int
+	for _, in := range got {
+		switch in.Role {
+		case RoleLevel:
+			levels++
+		case RoleLabel:
+			labels++
+		}
+		if in.Path == "" {
+			t.Errorf("empty path in %+v", in)
+		}
+	}
+	if levels < 1 {
+		t.Errorf("want >=1 level instance, got %d (of %d)", levels, len(got))
+	}
+	if labels < 1 {
+		t.Errorf("want >=1 label instance, got %d (of %d)", labels, len(got))
+	}
+}
+
+func TestReadSharedUIDs_Grundium(t *testing.T) {
+	dir := filepath.Join(testdir(t), "dicom", "scan_621_grundium_dicom")
+	if _, err := os.Stat(dir); err != nil {
+		t.Skipf("no DICOM fixture: %v", err)
+	}
+	insts, err := ClassifyInstances(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var levelPath string
+	for _, in := range insts {
+		if in.Role == RoleLevel {
+			levelPath = in.Path
+			break
+		}
+	}
+	if levelPath == "" {
+		t.Fatal("no level instance to read UIDs from")
+	}
+	u, err := ReadSharedUIDs(levelPath)
+	if err != nil {
+		t.Fatalf("ReadSharedUIDs: %v", err)
+	}
+	if u.Study == "" || u.Series == "" || u.FrameOfReference == "" {
+		t.Errorf("missing shared UID(s): %+v", u)
+	}
+	if u.DimensionOrg == "" {
+		t.Errorf("DimensionOrg empty — nested lookup regressed")
+	}
+}

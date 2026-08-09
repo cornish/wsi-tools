@@ -128,20 +128,54 @@ to skip the aspect guard.
 **Format coverage:**
 
 - **`remove`** works for every associated type on **SVS**, **generic-TIFF**,
-  **COG-WSI**, and **OME-TIFF**.
-- **`replace`** works for all types on **generic-TIFF**, **COG-WSI**, and
-  **OME-TIFF**. On **SVS**, `replace` works for any image that trails the tiled
-  pyramid — **label**, **macro**, **overview** — via a tail-IFD rewrite. The SVS
-  **thumbnail** (stored before the pyramid) can be replaced only on single-level
-  slides; on a multi-level slide it errors with a clear message.
+  **COG-WSI**, **OME-TIFF**, **DICOM-WSI**, and **IFE**.
+- **`replace`** works for all types on **generic-TIFF**, **COG-WSI**, **OME-TIFF**,
+  **DICOM-WSI**, and **IFE**. On **SVS**, `replace` works for any image that trails
+  the tiled pyramid — **label**, **macro**, **overview** — via a tail-IFD rewrite.
+  The SVS **thumbnail** (stored before the pyramid) can be replaced only on
+  single-level slides; on a multi-level slide it errors with a clear message.
 - **OME-TIFF editing is lossy:** the rebuild regenerates a minimal OME-XML, so
   instrument/acquisition/channel/vendor metadata is discarded (pyramid pixels,
   geometry, MPP, magnification, ICC, and the other associated images are kept).
-  An always-on warning fires. Associated replacements are JPEG-only. See
-  [ome-tiff-limitations.md](ome-tiff-limitations.md).
+  An always-on warning fires. Associated replacements are JPEG-only (opentile-go
+  OME-TIFF reader limitation). See [ome-tiff-limitations.md](ome-tiff-limitations.md).
+- **DICOM-WSI editing is surgical:** only the target `<type>.dcm` instance is
+  dropped or regenerated; pyramid instances are copied byte-for-byte. Output is
+  a directory (`<name>_edited/`). A replacement label is stored as a native-RGB
+  instance carrying the series' shared UIDs (Study/Series/FrameOfReference).
+  DICOMDIR, if present, is dropped.
+- **IFE editing rebuilds** through the IFE writer: pyramid tiles are copied
+  verbatim (lossless); the edited associated image is (re-)encoded as PNG.
 
-Other formats (DICOM, NDPI, Philips, BIF, IFE, Leica) are not editable in place —
-convert first with `convert --to {svs,tiff}` and edit the result.
+Other formats (**NDPI**, **Philips-TIFF**, **Leica SCN**, **BIF**) are not
+editable — convert first with `convert --to {svs,tiff}` and edit the result.
+BIF's label is embedded in the whole-slide overview (no independent label IFD);
+NDPI, Philips-TIFF, and Leica SCN have no writer.
+
+### `label rotate`
+Rotate the label image clockwise by 90, 180, or 270 degrees — for orientation
+correction without re-encoding the pyramid. Label-only (macro/thumbnail/overview
+are not rotatable). Works on all six editable formats: **SVS**, **generic-TIFF**,
+**COG-WSI**, **OME-TIFF**, **DICOM-WSI**, and **IFE**. A 90° or 270° rotation
+swaps the label's width and height.
+
+Lossless encoding is preserved per format: SVS/generic-TIFF/COG-WSI store the
+rotated label as **LZW + Predictor 2**; DICOM stores it as **native RGB**
+(uncompressed); IFE stores it as **PNG**. **OME-TIFF is an exception**: because
+the opentile-go OME-TIFF reader returns the label already JPEG-decoded, the
+rotated label is re-encoded to **JPEG** (same lossy caveat as OME-TIFF replace).
+All other formats produce a lossless result.
+
+```sh
+# Rotate a label 90° clockwise (SVS)
+wsitools label rotate 90 slide.svs
+
+# Rotate 180° in place
+wsitools label rotate 180 --in-place slide.svs
+
+# Rotate 270° with explicit output directory (DICOM series)
+wsitools label rotate 270 -o out_dir/ dicom_series/
+```
 
 ---
 
