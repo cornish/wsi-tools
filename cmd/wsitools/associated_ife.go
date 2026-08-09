@@ -40,12 +40,16 @@ func runAssociatedRemoveForIFE(typ, input, outPath string, fl removeFlags) error
 // when the type is not yet present — in an IFE slide via a pure verbatim pyramid
 // rebuild.
 func runAssociatedReplaceForIFE(typ, input, outPath string, fl replaceFlags) error {
-	img, err := decodeReplacementImage(fl.image)
-	if err != nil {
-		return err
+	repImg := fl.preImg
+	if repImg == nil {
+		img, err := decodeReplacementImage(fl.image)
+		if err != nil {
+			return err
+		}
+		repImg = imageToRGB(img)
 	}
 	lower := strings.ToLower(typ)
-	return rebuildIFEWithPlan(input, outPath, ifeEditPlan{replace: lower, repImg: imageToRGB(img)})
+	return rebuildIFEWithPlan(input, outPath, ifeEditPlan{replace: lower, repImg: repImg})
 }
 
 // rebuildIFEWithPlan opens the input IFE, copies the pyramid tiles verbatim into

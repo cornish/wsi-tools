@@ -161,11 +161,14 @@ func runAssociatedReplaceForDICOM(typ, input, outDir string, fl replaceFlags) er
 	if err != nil {
 		return err
 	}
-	img, err := decodeReplacementImage(fl.image)
-	if err != nil {
-		return err
+	rgb := fl.preImg
+	if rgb == nil {
+		img, err := decodeReplacementImage(fl.image)
+		if err != nil {
+			return err
+		}
+		rgb = imageToRGB(img)
 	}
-	rgb := imageToRGB(img)
 
 	src, err := source.Open(seriesDir)
 	if err != nil {

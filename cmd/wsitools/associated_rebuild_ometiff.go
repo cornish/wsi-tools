@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"image"
 	"log/slog"
 	"os"
 	"strings"
@@ -151,13 +152,20 @@ func runAssociatedReplaceForOMETIFF(typ, input, outPath string, fl replaceFlags)
 			existing = a
 		}
 	}
-	img, err := decodeReplacementImage(fl.image)
-	if err != nil {
-		return err
-	}
-	tw, th, err := resolveTargetDims(typ, img, existing, existing != nil, fl.labelDims)
-	if err != nil {
-		return err
+	var img image.Image
+	var tw, th int
+	if fl.preImg != nil {
+		img = decoderRGBToImage(fl.preImg)
+		tw, th = fl.preImg.Width, fl.preImg.Height
+	} else {
+		img, err = decodeReplacementImage(fl.image)
+		if err != nil {
+			return err
+		}
+		tw, th, err = resolveTargetDims(typ, img, existing, existing != nil, fl.labelDims)
+		if err != nil {
+			return err
+		}
 	}
 	bg, err := parseHexColor(fl.bgHex)
 	if err != nil {

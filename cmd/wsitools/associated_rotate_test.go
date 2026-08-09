@@ -34,3 +34,12 @@ func TestRotateRGB_270Dims(t *testing.T) {
 		t.Errorf("270 dims/len wrong: %dx%d len=%d", ow, oh, len(out))
 	}
 }
+
+func TestRotatableTypesGate(t *testing.T) {
+	if !rotatableTypes["label"] {
+		t.Error("label must be rotatable")
+	}
+	if rotatableTypes["macro"] {
+		t.Error("macro must NOT be rotatable")
+	}
+}
