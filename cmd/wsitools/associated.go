@@ -60,7 +60,7 @@ type replaceFlags struct {
 // for the given source format string.
 func assocFormatSupported(format string) bool {
 	switch format {
-	case string(opentile.FormatSVS), string(opentile.FormatGenericTIFF), string(opentile.FormatCOGWSI), string(opentile.FormatOMETIFF), string(opentile.FormatDICOM):
+	case string(opentile.FormatSVS), string(opentile.FormatGenericTIFF), string(opentile.FormatCOGWSI), string(opentile.FormatOMETIFF), string(opentile.FormatDICOM), string(opentile.FormatIFE):
 		return true
 	default:
 		return false
@@ -71,7 +71,7 @@ func gateFormat(src source.Source) error {
 	f := src.Format()
 	if !assocFormatSupported(f) {
 		return fmt.Errorf("%w: associated editing not yet supported for %s "+
-			"(SVS, generic-TIFF, COG-WSI, OME-TIFF, and DICOM only — "+
+			"(SVS, generic-TIFF, COG-WSI, OME-TIFF, DICOM, and IFE only — "+
 			"for other transforms use 'wsitools convert')", ErrUnsupportedAssoc, f)
 	}
 	return nil
@@ -191,6 +191,13 @@ func runAssociatedRemoveFor(typ, input, outPath string, fl removeFlags) error {
 		src.Close()
 		return runAssociatedRemoveForDICOM(typ, input, outPath, fl)
 	}
+	// IFE is a single-file format rebuilt verbatim (pyramid tiles copied
+	// byte-for-byte; only the associated set in the METADATA block changes).
+	// Close our handle first — rebuildIFEWithPlan opens its own.
+	if src.Format() == string(opentile.FormatIFE) {
+		src.Close()
+		return runAssociatedRemoveForIFE(typ, input, outPath, fl)
+	}
 	defer src.Close()
 
 	f, err := parseSlideFile(input)
@@ -275,6 +282,13 @@ func runAssociatedReplaceFor(typ, input, outPath string, fl replaceFlags) error 
 	if src.Format() == string(opentile.FormatDICOM) {
 		src.Close()
 		return runAssociatedReplaceForDICOM(typ, input, outPath, fl)
+	}
+	// IFE is a single-file format rebuilt verbatim (pyramid tiles copied
+	// byte-for-byte; only the associated set in the METADATA block changes).
+	// Close our handle first — rebuildIFEWithPlan opens its own.
+	if src.Format() == string(opentile.FormatIFE) {
+		src.Close()
+		return runAssociatedReplaceForIFE(typ, input, outPath, fl)
 	}
 	defer src.Close()
 
