@@ -21,8 +21,8 @@ OME-OneFrame · Leica SCN (single-image) · COG-WSI · DICOM-WSI.
 | OME-OneFrame  | ✓ | ✓ | ✓ | ✓ | ✓ | ✓* | — | — | — |
 | Leica SCN     | ✓ | ✓ | ✓ | ✓ | ✓ | ✓* | — | — | — |
 | COG-WSI       | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ |
-| IFE           | ✓ | ✓ | — | ✓ | ✓ | ✓  | — | — | — |
-| DICOM-WSI     | ✓ | ✓ | — | ✓ | ✓⁸ | ✓ | ✓⁹ | ✓⁹ | — |
+| IFE           | ✓ | ✓ | — | ✓ | ✓ | ✓  | — | — | ✓ |
+| DICOM-WSI     | ✓ | ✓ | — | ✓ | ✓⁸ | ✓ | ✓⁹ | ✓⁹ | ✓¹⁰ |
 
 ## Convert targets
 
@@ -62,9 +62,18 @@ verbatim (byte-identical L0). Sources with no matching writer error with a
 pointer to `convert --to … --factor`. To transform *into a different* container,
 use `convert --to <target> --factor N`.
 
-**⁶ edit (label/macro/thumbnail/overview remove|replace)** — pyramid tile bytes
-are copied verbatim (no decode/re-encode); only the associated-image IFD is
-rewritten. See [commands.md](commands.md#associated-image-editing)
+**⁶ edit (label/macro/thumbnail/overview remove|replace|rotate)** — pyramid tile
+bytes are copied verbatim (no decode/re-encode); only the associated image
+changes. Editable formats: **SVS**, **generic-TIFF**, **COG-WSI**, **OME-TIFF**,
+**DICOM-WSI**¹⁰, and **IFE**. DICOM editing is surgical: only the target
+`<type>.dcm` instance is dropped/replaced; the pyramid instances are copied
+byte-for-byte; output is a directory (`<name>_edited/`); DICOMDIR (if present)
+is dropped. IFE editing rebuilds through the IFE writer with pyramid tiles copied
+verbatim (lossless) and the edited associated image re-encoded as PNG. `label
+rotate {90,180,270}` rotates the label clockwise (label-only; 90/270 swap W/H);
+available on all six editable formats. Formats with no writer — **NDPI**,
+**Philips-TIFF**, **Leica SCN** — and **BIF** (label embedded in the overview)
+are not editable. See [commands.md](commands.md#associated-image-editing)
 for per-type coverage.
 
 **⁷ OME-TIFF editing is lossy** — the file is rebuilt and a minimal OME-XML is
@@ -83,6 +92,11 @@ VOLUME instances from a DICOM, JPEG-baseline, or JPEG 2000 source, either a
 single instance (`--level N`) or the full pyramid by default. DICOM is also a
 transform target (`--factor`, `downsample`, `crop`). See
 [commands.md](commands.md#dicom-output) for the full behavior.
+
+**¹⁰ DICOM-WSI edit** — surgical editing: only the target `<type>.dcm` instance
+is dropped or regenerated (as a native-RGB instance carrying the series' shared
+UIDs); all pyramid instances are copied byte-for-byte. Output is a directory
+(`<name>_edited/`). DICOMDIR, if present, is dropped.
 
 ## DICOM source input
 

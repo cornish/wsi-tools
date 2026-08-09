@@ -73,12 +73,17 @@ SZI · BIF · IFE
 | NDPI          | ✓ | ✓ | ✓ | ✓ | ✓ | ✓* | — | — | — |
 | Leica SCN     | ✓ | ✓ | ✓ | ✓ | ✓ | ✓* | — | — | — |
 | COG-WSI       | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ |
-| IFE           | ✓ | ✓ | — | ✓ | ✓ | ✓  | — | — | — |
-| DICOM-WSI     | ✓ | ✓ | — | ✓ | ✓ | ✓  | ✓ | ✓ | — |
+| IFE           | ✓ | ✓ | — | ✓ | ✓ | ✓  | — | — | ✓ |
+| DICOM-WSI     | ✓ | ✓ | — | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ (surgical) |
 
 <sub>**✓\*** stripped source — decoded and re-encoded into reproducible JPEG tiles
-rather than bit-exact tile-copied. DICOM-WSI writing is experimental. Full matrix
-(including OME-OneFrame), convert targets, and per-format caveats:
+rather than bit-exact tile-copied. **DICOM-WSI edit** is surgical (target
+`<type>.dcm` only; output is a directory). **IFE edit** rebuilds through the IFE
+writer (pyramid tiles verbatim). **OME-TIFF edit** is lossy (minimal OME-XML
+regenerated). NDPI, Philips-TIFF, Leica SCN, and BIF are not editable. Also:
+`label rotate {90,180,270}` for orientation correction (label-only; all six
+editable formats). DICOM-WSI writing is experimental. Full matrix (including
+OME-OneFrame), convert targets, and per-format caveats:
 **[docs/formats.md](docs/formats.md)**.</sub>
 
 ## Install
