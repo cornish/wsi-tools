@@ -57,10 +57,10 @@ type replaceFlags struct {
 // ---------- format gating ----------
 
 // assocFormatSupported reports whether associated-image editing is supported
-// for the given source format string. Only SVS and generic-TIFF are supported.
+// for the given source format string.
 func assocFormatSupported(format string) bool {
 	switch format {
-	case string(opentile.FormatSVS), string(opentile.FormatGenericTIFF), string(opentile.FormatCOGWSI), string(opentile.FormatOMETIFF):
+	case string(opentile.FormatSVS), string(opentile.FormatGenericTIFF), string(opentile.FormatCOGWSI), string(opentile.FormatOMETIFF), string(opentile.FormatDICOM):
 		return true
 	default:
 		return false
@@ -71,7 +71,7 @@ func gateFormat(src source.Source) error {
 	f := src.Format()
 	if !assocFormatSupported(f) {
 		return fmt.Errorf("%w: associated editing not yet supported for %s "+
-			"(SVS, generic-TIFF, COG-WSI, and OME-TIFF only — "+
+			"(SVS, generic-TIFF, COG-WSI, OME-TIFF, and DICOM only — "+
 			"for other transforms use 'wsitools convert')", ErrUnsupportedAssoc, f)
 	}
 	return nil
@@ -184,6 +184,12 @@ func runAssociatedRemoveFor(typ, input, outPath string, fl removeFlags) error {
 	if src.Format() == string(opentile.FormatOMETIFF) {
 		src.Close()
 		return runAssociatedRemoveForOMETIFF(typ, input, outPath, fl)
+	}
+	// DICOM is directory-shaped; edit by copying instances minus the target.
+	// Close our opentile handle first — commitDICOMEdit works at the file level.
+	if src.Format() == string(opentile.FormatDICOM) {
+		src.Close()
+		return runAssociatedRemoveForDICOM(typ, input, outPath, fl)
 	}
 	defer src.Close()
 
