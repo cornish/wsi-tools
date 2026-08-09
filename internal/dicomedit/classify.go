@@ -13,6 +13,7 @@ import (
 
 	"github.com/WSILabs/dicom"
 	"github.com/WSILabs/dicom/pkg/tag"
+	"github.com/wsilabs/wsitools/internal/dicomwriter"
 )
 
 // Role classifies a DICOM instance by its ImageType (0008,0008) value[2].
@@ -100,4 +101,39 @@ func classifyOne(path string) (Role, error) {
 	default:
 		return RoleOther, nil
 	}
+}
+
+// ReadSharedUIDs reads the series-level UIDs from one existing instance so a new
+// associated instance can join the same series.
+func ReadSharedUIDs(path string) (dicomwriter.SharedUIDs, error) {
+	ds, err := dicom.ParseFile(path, nil, dicom.SkipPixelData())
+	if err != nil {
+		return dicomwriter.SharedUIDs{}, fmt.Errorf("dicomedit: parse %s: %w", path, err)
+	}
+
+	str := func(t tag.Tag) string {
+		el, err := ds.FindElementByTag(t)
+		if err != nil {
+			return ""
+		}
+		v, _ := el.Value.GetValue().([]string)
+		if len(v) == 0 {
+			return ""
+		}
+		return v[0]
+	}
+
+	u := dicomwriter.SharedUIDs{
+		Study:            str(tag.StudyInstanceUID),
+		Series:           str(tag.SeriesInstanceUID),
+		FrameOfReference: str(tag.FrameOfReferenceUID),
+		DimensionOrg:     str(tag.DimensionOrganizationUID),
+		// Pyramid is intentionally left empty; it links VOLUME instances only.
+	}
+
+	if u.Study == "" || u.Series == "" || u.FrameOfReference == "" {
+		return dicomwriter.SharedUIDs{}, fmt.Errorf("dicomedit: %s missing required shared UID(s)", path)
+	}
+
+	return u, nil
 }
