@@ -123,16 +123,40 @@ func ReadSharedUIDs(path string) (dicomwriter.SharedUIDs, error) {
 		return v[0]
 	}
 
+	strNested := func(t tag.Tag) string {
+		el, err := ds.FindElementByTagNested(t)
+		if err != nil {
+			return ""
+		}
+		v, _ := el.Value.GetValue().([]string)
+		if len(v) == 0 {
+			return ""
+		}
+		return v[0]
+	}
+
 	u := dicomwriter.SharedUIDs{
 		Study:            str(tag.StudyInstanceUID),
 		Series:           str(tag.SeriesInstanceUID),
 		FrameOfReference: str(tag.FrameOfReferenceUID),
-		DimensionOrg:     str(tag.DimensionOrganizationUID),
+		// DimensionOrganizationUID (0020,9164) lives inside
+		// DimensionOrganizationSequence (0020,9221), so a nested lookup is required.
+		DimensionOrg: strNested(tag.DimensionOrganizationUID),
 		// Pyramid is intentionally left empty; it links VOLUME instances only.
 	}
 
-	if u.Study == "" || u.Series == "" || u.FrameOfReference == "" {
-		return dicomwriter.SharedUIDs{}, fmt.Errorf("dicomedit: %s missing required shared UID(s)", path)
+	var missing []string
+	if u.Study == "" {
+		missing = append(missing, "StudyInstanceUID")
+	}
+	if u.Series == "" {
+		missing = append(missing, "SeriesInstanceUID")
+	}
+	if u.FrameOfReference == "" {
+		missing = append(missing, "FrameOfReferenceUID")
+	}
+	if len(missing) > 0 {
+		return dicomwriter.SharedUIDs{}, fmt.Errorf("dicomedit: %s missing required shared UID(s): %s", path, strings.Join(missing, ", "))
 	}
 
 	return u, nil

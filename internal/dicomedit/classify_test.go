@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-
 func testdir(t *testing.T) string {
 	t.Helper()
 	d := os.Getenv("WSI_TOOLS_TESTDIR")
@@ -70,5 +69,8 @@ func TestReadSharedUIDs_Grundium(t *testing.T) {
 	}
 	if u.Study == "" || u.Series == "" || u.FrameOfReference == "" {
 		t.Errorf("missing shared UID(s): %+v", u)
+	}
+	if u.DimensionOrg == "" {
+		t.Errorf("DimensionOrg empty — nested lookup regressed")
 	}
 }
