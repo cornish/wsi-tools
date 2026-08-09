@@ -39,4 +39,7 @@ func TestClassifyInstances_Grundium(t *testing.T) {
 	if levels < 1 {
 		t.Errorf("want >=1 level instance, got %d (of %d)", levels, len(got))
 	}
+	if labels < 1 {
+		t.Errorf("want >=1 label instance, got %d (of %d)", labels, len(got))
+	}
 }

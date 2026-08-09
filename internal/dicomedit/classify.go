@@ -59,7 +59,7 @@ func ClassifyInstances(dir string) ([]InstanceInfo, error) {
 		path := filepath.Join(dir, e.Name())
 		role, err := classifyOne(path)
 		if err != nil {
-			return nil, fmt.Errorf("dicomedit: classify %s: %w", e.Name(), err)
+			return nil, err
 		}
 		out = append(out, InstanceInfo{Path: path, Role: role})
 	}
@@ -71,7 +71,7 @@ func ClassifyInstances(dir string) ([]InstanceInfo, error) {
 func classifyOne(path string) (Role, error) {
 	ds, err := dicom.ParseFile(path, nil, dicom.SkipPixelData())
 	if err != nil {
-		return RoleOther, fmt.Errorf("parse: %w", err)
+		return RoleOther, fmt.Errorf("dicomedit: parse %s: %w", path, err)
 	}
 
 	el, err := ds.FindElementByTag(tag.ImageType)
@@ -95,6 +95,8 @@ func classifyOne(path string) (Role, error) {
 		return RoleOverview, nil
 	case "THUMBNAIL":
 		return RoleThumbnail, nil
+	case "MACRO":
+		return RoleMacro, nil
 	default:
 		return RoleOther, nil
 	}
