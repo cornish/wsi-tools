@@ -177,10 +177,14 @@ func runAssociatedReplaceForDICOM(typ, input, outDir string, fl replaceFlags) er
 	if oldTarget != "" {
 		skip[oldTarget] = true
 	}
+	instNum := nInstances + 1 // add-new: final count is nInstances+1
+	if oldTarget != "" {
+		instNum = nInstances // replace: one dropped, one added → final count stays nInstances
+	}
 	addFn := func(dstDir string) error {
 		a := &rgbAssoc{typ: typ, img: rgb}
 		var buf bytes.Buffer
-		if err := dicomwriter.WriteAssociatedInstance(&buf, src, a, shared, nInstances+1); err != nil {
+		if err := dicomwriter.WriteAssociatedInstance(&buf, src, a, shared, instNum); err != nil {
 			return fmt.Errorf("build %s instance: %w", typ, err)
 		}
 		return os.WriteFile(filepath.Join(dstDir, typ+".dcm"), buf.Bytes(), 0o644)
