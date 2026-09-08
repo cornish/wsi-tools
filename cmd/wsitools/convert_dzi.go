@@ -88,9 +88,26 @@ func runConvertDZI(cmd *cobra.Command, input string, start time.Time) error {
 		tileSize, overlap = res.tileSize, res.overlap
 		infof("lossless: base tiles copied verbatim (tile-size %d, overlap 0); edges + lower levels regenerated\n", tileSize)
 	}
+	// Carry source scale metadata into the .dzi manifest (as namespaced wsi:*
+	// attributes; opentile-go#113 / wsitools#29), scaled for --factor/--target-mag
+	// (MPP ×factor, magnification ÷factor) so the manifest describes the OUTPUT.
+	md := src.Metadata()
+	mppX, mppY := md.MPPX, md.MPPY
+	if mppX == 0 {
+		mppX = md.MPP
+	}
+	if mppY == 0 {
+		mppY = md.MPP
+	}
+	mppX, mppY, mag := scaleMPPMag(mppX, mppY, md.Magnification, factor)
+	mpp := md.MPP
+	if mpp != 0 {
+		mpp *= float64(factor)
+	}
 	cfg := dzi.Config{
 		Name: name, Width: outW, Height: outH,
 		Format: dziFormat, TileSize: tileSize, Overlap: overlap,
+		MPP: mpp, MPPX: mppX, MPPY: mppY, Magnification: mag,
 	}
 	w, err := dzi.NewWriter(&dirFS{root: root}, cfg)
 	if err != nil {

@@ -24,6 +24,13 @@ type Config struct {
 	Format   string // "jpeg" or "png"
 	TileSize int
 	Overlap  int
+
+	// Scale metadata (optional). Carried into the .dzi manifest as namespaced
+	// wsi:* attributes (opentile-go#113 / wsitools#29); zero values are omitted.
+	MPP           float64
+	MPPX          float64
+	MPPY          float64
+	Magnification float64
 }
 
 // ErrTileAlreadyWritten is returned by WriteTile if the same
@@ -111,11 +118,15 @@ func (w *Writer) Close() error {
 		return fmt.Errorf("dzi: create %s: %w", path, err)
 	}
 	m := Manifest{
-		Format:   w.cfg.Format,
-		Overlap:  w.cfg.Overlap,
-		TileSize: w.cfg.TileSize,
-		Width:    w.cfg.Width,
-		Height:   w.cfg.Height,
+		Format:        w.cfg.Format,
+		Overlap:       w.cfg.Overlap,
+		TileSize:      w.cfg.TileSize,
+		Width:         w.cfg.Width,
+		Height:        w.cfg.Height,
+		MPP:           w.cfg.MPP,
+		MPPX:          w.cfg.MPPX,
+		MPPY:          w.cfg.MPPY,
+		Magnification: w.cfg.Magnification,
 	}
 	if err := m.Write(f); err != nil {
 		f.Close()
